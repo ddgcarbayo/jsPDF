@@ -688,6 +688,20 @@ class PdfObject
 
         return ret
 
+class PdfImage
+    constructor: (@imageData, @format, @width=-1, @height=-1) ->
+        @format = @format.toUpperCase()
+        switch @format
+            when 'JPEG'
+                if @width == -1 or @height == -1
+                    [@width, @height] = getJpegSize(@imageData)
+            else
+                if @width == -1 or @height == -1
+                    throw new Error("Image dimensions must be explicitly specified for format #{@format}")
+
+    toString: ->
+        return '' + @imageData
+
 class jsPDF
     jsPDFVersion: '20120623'
 
@@ -751,6 +765,9 @@ class jsPDF
 
         # local hash of all the fonts we have added
         @fontList = {}
+
+        # list of all image resources we have added
+        @imageList = []
 
         @pageReferences = new PdfArray
         @pageList = []
@@ -870,6 +887,30 @@ class jsPDF
         if format.toUpperCase() != 'JPEG'
             throw new Error('currently only JPEG format is supported for images')
 
+        image = new PdfImage(imageData, format)
+        # give the image a unique pdf-formatted name and add it to the imageList
+        image.name = "/I#{@imageList.length+1}"
+        @imageList.push image
+
+        imagedict =
+            '/Type': '/XObject'
+            '/Subtype': '/Image'
+            '/Width': image.width
+            '/Height': image.height
+            '/ColorSpace': '/DeviceRGB'
+            '/BitsPerComponent': '8'
+            '/Filter': '/DCTDecode'
+            #'/DecodeParams': '[]' # DecodeParams not used in DCTDecode objects...
+            #'/Mask': '[]' # Not supported yet
+            #'/SMask': '[]' # Not supported yet
+        imageReferece = @referenceFactory.create()
+        imageObj = new PdfObject(imageReferece, new Dictionary(imagedict), image)
+
+        # add the image to our object list and create an entry in our XObject-container for it
+        @objectList.push imageObj
+        @xobjectDict.set(image.name, imageReferece)
+
+        return image
 
     setProperties: (props) ->
         keys =
@@ -1167,6 +1208,14 @@ jsPDFOriginalAPI =
     circle: (x, y, r, style) ->
         @ellipse(x, y, r, r, style)
         return this
+
+    addImage: (image, format, x, y, w=72, h=72) ->
+        x = x * @scale
+        y = y * @scale
+        w = w * @scale
+        h = h * @scale
+        image = @addImageResource(image, format)
+        @currentPageContents.stream.drawImage(image.name, x, y, w, h)
 
 
 ###
